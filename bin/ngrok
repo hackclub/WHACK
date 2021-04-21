@@ -1,0 +1,3 @@
+#!/bin/sh
+
+ngrok http -subdomain whack-a-mole-dev 3000
