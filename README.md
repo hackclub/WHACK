@@ -1,4 +1,4 @@
-# WHACK
+# WHACK - `#whack-a-mole`
 
 ![Demo of WHACK](https://cloud-3nuew740s-hack-club-bot.vercel.app/0peek_2021-04-22_10-54.gif)
 
