@@ -39,7 +39,7 @@ const whack = async ({ message }) => {
     return
   }
 
-  let game = new Game(channelIDToRunIn, 500, 20, 48, 8, lastWinnerID, lastWinnerTime)
+  let game = new Game(channelIDToRunIn, 500, 0, 48, 8, lastWinnerID, lastWinnerTime)
 
   game.registerWhackCallbacks(app)
 
