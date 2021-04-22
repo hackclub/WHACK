@@ -13,3 +13,8 @@ SLACK_SIGNING_SECRET
 SLACK_BOT_TOKEN
 WHACK_A_MOLE_CHANNEL_ID # this channel must already be created
 ```
+
+## Ideas
+
+- Leaderboard
+- Different levels (ex. it starts with 10 x 10, then 12 x 12, etc)
