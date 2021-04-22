@@ -20,3 +20,25 @@ exports.humanizeDuration = (duration) => {
 exports.uuid = () => {
   return uuidv4()
 }
+
+exports.sleep = async (ms) => {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+// return a string with char set as every other character in str.
+//
+// example: intersperse('hello', '1')
+//            => 'h1e1l1l1o'
+exports.intersperse = (str, char) => {
+  let newStr = []
+
+  for (let i = 0; i < str.length; i += 1) {
+    if (i+1 < str.length) {
+      newStr.push(str.substr(i, 1), char)
+    } else { // don't add a trailing char
+      newStr.push(str.substr(i, 1))
+    }
+  }
+
+  return newStr.join('')
+}

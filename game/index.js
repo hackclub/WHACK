@@ -1,4 +1,10 @@
-const { rand, randItem, uuid } = require('../util')
+const {
+  rand, randItem,
+  uuid,
+  humanizeDuration,
+  sleep,
+  intersperse
+} = require('../util')
 
 const gopherOptions = [
   ':gopher:',
@@ -13,7 +19,14 @@ const grassOptions = [
   ':golf:',
 ]
 
-const reactionOptions = [
+const initialReactions = [
+  'alphabet-white-w',
+  'a',
+  'c',
+  'alphabet-white-k'
+]
+
+const randomReactionOptions = [
   'lego_goldcoin',
   'custard',
   'goose-dance',
@@ -61,7 +74,7 @@ function generateButtonBlocks(gameID, buttonOptions, rows) {
       row++
       inProgressRow = {
         type: 'actions',
-        block_id: `whack_options_row_${row}`,
+        block_id: `${gameID}_whack_options_row_${row}`,
         elements: []
       }
     }
@@ -70,7 +83,7 @@ function generateButtonBlocks(gameID, buttonOptions, rows) {
   return blocks
 }
 
-function generateGameBoard(gameID, totalButtons, totalRows, gopherIndex, lastWinnerID, lastWinnerTime) {
+function generateGameBoard(gameID, totalButtons, totalRows, gopherIndex, gameStartTime, lastWinnerID, lastWinnerDuration) {
   const buttonOptions = Array(totalButtons).fill().map((_, i) => {
     let isGopher = (i == gopherIndex)
 
@@ -82,9 +95,11 @@ function generateGameBoard(gameID, totalButtons, totalRows, gopherIndex, lastWin
 
   const generatedBlocks = generateButtonBlocks(gameID, buttonOptions, totalRows)
 
+  const gameDuration = humanizeDuration(gameStartTime - new Date())
+
   const lastWinnerText = lastWinnerID ?
-    `<@${lastWinnerID}> was the last winner in ${humanizeDuration(lastWinnerTime)}` :
-    'i am a silly bot and have no memory of the last winner'
+    `current game running for: ${gameDuration}, <@${lastWinnerID}> was the last winner in ${humanizeDuration(lastWinnerDuration)}` :
+    `current game running for: ${gameDuration}`
 
   return {
     blocks: [
@@ -110,7 +125,7 @@ function generateGameBoard(gameID, totalButtons, totalRows, gopherIndex, lastWin
 }
 
 class Game {
-  constructor(channelID, totalButtons = 48, totalRows = 8, lastWinnerID = null, lastWinnerTime = null) {
+  constructor(channelID, updateInterval = 1000, updateIncrement = 0, totalButtons = 48, totalRows = 8, lastWinnerID = null, lastWinnerDuration = null) {
     if (!channelID) {
       throw 'channelID is required'
     }
@@ -119,58 +134,112 @@ class Game {
 
     this.totalButtons = totalButtons
     this.totalRows = totalRows
-    this.gopherIndex = rand(0, totalButtons)
+
+    this.updateInterval = updateInterval
+    this.updateIncrement = updateIncrement
 
     this.lastWinnerID = lastWinnerID
-    this.lastWinnerTime = lastWinnerTime
+    this.lastWinnerDuration = lastWinnerDuration
 
+    this.gameOver = false
     this.gameStartTime = null
+    this.whackedTime = null
+    this.whackerID = null
+    this.gopherIndex = 0
+
+    this.reactionIndex = 0
+
+    this.messageTS // will be set to the timestamp of the post
   }
 
   tick() {
+    if (this.whackedTime) {
+      this.gameOver= true
+    }
+
     this.gopherIndex = rand(0, this.totalButtons)
   }
 
   render() {
+    return generateGameBoard(this.gameID, this.totalButtons, this.totalRows, this.gopherIndex, this.gameStartTime, this.lastWinnerID, this.lastWinnerDuration)
   }
 
-  async startNewGame(app) {
-    this.gopherIndex = rand(0, this.totalButtons)
+  async handleWhack(app, body) {
+    if (this.gameOver) {
+      return
+    }
 
-    this.whacked = false
-    this.gameStartTime = new Date()
+    // we need to make sure there is 1 and only 1 action given to us. i'm not
+    // sure why there would be multiple, i've never had this happen, but this is
+    // just in case
+    if (body.actions.length != 1) {
+      return
+    }
 
-    const board = generateGameBoard(this.gameID, this.totalButtons, this.totalRows, this.gopherIndex, this.lastWinner, this.lastWinnerTime)
+    let msg = body.message
+    let action = body.actions[0]; // need this semicolon
 
-    const initialPostMsg = await app.client.chat.postMessage({
-      channel: this.channelID,
-      ...board
-    })
+    // anonymous function to get the user info from slack (so we can display
+    // their display name, instead of the incorrect "name" field that slack
+    // gives us in the callback
+    (async () => {
+      const { profile: userInfo } = await app.client.users.profile.get({
+        user: body.user.id
+      })
 
-    await app.client.reactions.add({
-      channel: initialPostMsg.channel,
-      name: randItem(reactionOptions),
-      timestamp: initialPostMsg.ts
-    })
+      // intersperse the display_name with empty unicode spaces to prevent
+      // @mentions for users to trigger
+      let displayNameWithEmptySpaces = intersperse(userInfo.display_name, '‎')
 
-    setInterval(() => {
-      if (this.whacked) {
-        return true
+      app.client.chat.postMessage({
+        channel: body.channel.id,
+        thread_ts: msg.ts,
+        text: `WHACK by ${displayNameWithEmptySpaces}`
+      })
+    })()
+
+
+    if (action.value != 'gopher') {
+
+      try {
+        await this.postReaction(app)
+      } catch {
+        // don't do anything, if this errors it's probably because we've
+        // already reacted with the emoji. and that's ok. this is nonessential
+        // functionality anyways.
       }
 
-      this.gopherIndex = rand(0, this.totalButtons)
-      const newBoard = generateGameBoard(this.totalButtons, this.totalRows, this.gopherIndex)
+      return
+    }
 
+    this.whackedTime = new Date()
+    this.whackerID = body.user.id
+
+    msg.blocks[0].text = {
+      type: "plain_text",
+      text: `WHACK A MOLE - WHACKED`,
+      emoji: true
+    }
+
+    msg.blocks[1].elements[0].text = `<@${this.whackerID}> WON in ${humanizeDuration(this.whackedTime - this.gameStartTime)}`
+
+    await app.client.chat.update({
+      channel: body.channel.id,
+      ...msg
+    })
+
+    // queue one final update in case one of the game board updates we sent to
+    // slack lagged out, so the final board state we write to slack is correct
+    setTimeout(() => {
       app.client.chat.update({
         channel: this.channelID,
-        ts: initialPostMsg.ts,
-        ...newBoard
+        ...msg
       })
-    }, 1000)
+    }, 5000) // 5 seconds after game ends
   }
 
-  async registerBlockCallbacks(app) {
-    const rowIDs = Array(this.totalButtons).fill().map((_, i) => {
+  registerWhackCallbacks(app) {
+    const rowIDs = Array(this.totalRows).fill().map((_, i) => {
       return `${this.gameID}_whack_options_row_${i}`
     })
 
@@ -184,63 +253,71 @@ class Game {
     })
   }
 
-  async handleWhack(app, body) {
-    if (this.whacked) {
-      return
+  async postReaction(app) {
+    if (!this.messageTS) {
+      throw 'this.messageTS must be set'
     }
 
-    console.log(body)
-    debugger
+    this.reactionIndex = this.reactionIndex || 0
 
-    // we need to make sure there is 1 and only 1 action given to us. i'm not
-    // sure why there would be multiple, i've never had this happen, but this is
-    // just in case
-    if (body.actions.length != 1) {
-      return
+    if (this.reactionIndex < initialReactions.length) {
+      const reaction = initialReactions[this.reactionIndex]
+
+      await app.client.reactions.add({
+        channel: this.channelID,
+        timestamp: this.messageTS,
+        name: reaction
+      })
+
+      this.reactionIndex++
+    } else {
+      await app.client.reactions.add({
+        channel: this.channelID,
+        timestamp: this.messageTS,
+        name: randItem(randomReactionOptions)
+      })
     }
+  }
 
-    let msg = body.message
-    let action = body.actions[0]
+  async startNewGame(app) {
+    // setup
+    this.gameStartTime = new Date()
 
-    app.client.chat.postMessage({
-      channel: body.channel.id,
-      thread_ts: msg.ts,
-      text: `WHACK by ${body.user.name}`
+    // game loop
+    this.tick()
+    const initialBoard = this.render()
+
+    // initial post
+    const initialPostMsg = await app.client.chat.postMessage({
+      channel: this.channelID,
+      ...initialBoard
     })
 
-    if (action.value != 'gopher') {
+    this.messageTS = initialPostMsg.ts
 
-      try {
-        await app.client.reactions.add({
-          channel: body.channel.id,
-          name: randItem(reactionOptions),
-          timestamp: msg.ts
-        })
-      } catch {
-        // don't do anything, if this errors it's probably because we've
-        // already reacted with the emoji. and that's ok. this is nonessential
-        // functionality anyways.
+    this.postReaction(app)
+
+    let newBoard
+
+    while (!this.gameOver) {
+      await sleep(this.updateInterval)
+      this.updateInterval += this.updateIncrement
+
+      this.tick()
+      if (this.gameOver) {
+        break
       }
 
-      return
+      newBoard = this.render()
+
+      app.client.chat.update({
+        channel: this.channelID,
+        ts: this.messageTS,
+        ...newBoard
+      })
     }
 
-    this.whacked = true
-    //this.lastWinner = body.user.id
-    //this.lastWinnerTime = new Date() - gameStartTime
-
-    msg.blocks[0].text = {
-      type: "plain_text",
-      text: `WHACK A MOLE - WHACKED`,
-      emoji: true
-    }
-
-    msg.blocks[1].elements[0].text = `<@${body.user.id}> WON in ${humanizeDuration(new Date() - this.gameStartTime)}`
-
-    await app.client.chat.update({
-      channel: body.channel.id,
-      ...msg
-    })
+    return [ this.whackerID, (this.whackedTime - this.gameStartTime) ]
   }
 }
 
