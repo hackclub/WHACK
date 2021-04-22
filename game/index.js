@@ -23,14 +23,7 @@ const initialReactions = [
   'alphabet-white-w',
   'a',
   'c',
-  'alphabet-white-k',
-  'a',
-  'alphabet-white-l',
-  'a',
-  'c',
-  'alphabet-white-k',
-  'e-mail',
-  'alphabet-white-r'
+  'alphabet-white-k'
 ]
 
 const randomReactionOptions = [
