@@ -61,7 +61,7 @@ console.log('starting the app!...'); // need a semicolon here for the below asyn
   try {
     await app.client.conversations.join({ channel: channelIDToRunIn })
   } catch (err) {
-    console.error("Error joining $WHACK_A_MOLE_CHANNEL. Please make sure that environment variable is properly set. See full error:", err)
+    console.error("Error joining $WHACK_A_MOLE_CHANNEL_ID. Please make sure that environment variable is properly set. See full error:", err)
   }
 
   const port = process.env.PORT || 3000
