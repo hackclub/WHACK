@@ -21,6 +21,7 @@ const grassOptions = [
 
 const initialReactions = [
   'alphabet-white-w',
+  'hack_club',
   'a',
   'c',
   'alphabet-white-k'
